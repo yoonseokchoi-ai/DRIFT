@@ -43,7 +43,6 @@ drift/
 │   └── drift_2d_dataset.py   # 📊 Dataset & DataModule (SLR simulation)
 └── config/
     ├── drift_2d_config.yaml          # HCP (0.7mm isotropic)
-    ├── drift_2d_brats21_config.yaml  # BraTS21
     ├── drift_2d_mind_config.yaml     # MIND (0.9mm isotropic)
     └── drift_2d_ideas_config.yaml    # IDEAS (1.0mm isotropic)
 ```
@@ -115,48 +114,56 @@ DRIFT supports **three public brain MRI datasets** with isotropic HR ground trut
 
 ### Data format
 
-DRIFT supports two data formats:
+DRIFT supports two data formats. Choose one and set the paths in your config.
 
 #### Option A: Pre-extracted 2D slices (NPY, recommended ⚡)
 
-Pre-extract 2D slices from 3D volumes to avoid repeated I/O during training:
+Pre-extract 2D slices from 3D volumes to avoid repeated disk I/O during training. Each `.npy` file is a single 2D slice of shape `(H, W)` in `float32`, normalized to `[0, 1]`.
 
 ```
-data_root/
+/your/data/path/hcp_2d_npy/          # <-- your path here
 ├── train/
-│   ├── subject001_slice000.npy   # shape: (H, W), float32, [0, 1]
-│   ├── subject001_slice001.npy
-│   └── ...
-└── val/
-    ├── subject200_slice000.npy
-    └── ...
+│   └── slices/
+│       ├── 100206_t1_axi_032.npy    # naming: {subject}_{modality}_{plane}_{idx}.npy
+│       ├── 100206_t1_axi_034.npy
+│       └── ...
+└── test/
+    └── slices/
+        ├── 200109_t1_axi_032.npy
+        └── ...
 ```
 
 #### Option B: On-the-fly from 3D volumes (NIfTI)
 
-Place 3D NIfTI volumes in a directory — slices are extracted during training:
+Place 3D NIfTI volumes in a directory — slices are extracted on-the-fly during training (slower, but no preprocessing needed):
 
 ```
-data_root/
+/your/data/path/hcp_nifti/           # <-- your path here
 ├── train/
-│   ├── subject001_t1.nii.gz
+│   ├── 100206_t1.nii.gz
+│   ├── 100206_t2.nii.gz
 │   └── ...
 └── val/
-    ├── subject200_t1.nii.gz
+    ├── 200109_t1.nii.gz
     └── ...
 ```
 
-### Update config paths
+### ⚠️ Update config paths (required)
 
-Edit the data paths in your config file:
+Before training, you **must** edit the data paths in your config file to match your local environment. Open `config/drift_2d_config.yaml` and update the following fields:
 
 ```yaml
 data:
-  use_precomputed: true         # true for NPY, false for on-the-fly
+  use_precomputed: true                          # true for NPY (Option A), false for NIfTI (Option B)
   data_format: npy
-  precomputed_path: /path/to/npy_data
-  data_path: /path/to/nifti_data   # fallback for on-the-fly
+  precomputed_path: /your/data/path/hcp_2d_npy   # ← CHANGE THIS to your NPY data directory
+  data_path: /your/data/path/hcp_nifti            # ← CHANGE THIS to your NIfTI data directory (Option B)
+
+wandb:
+  save_dir: /your/output/path/                    # ← CHANGE THIS to where you want checkpoints & logs
 ```
+
+> 💡 **Tip:** Similarly update `config/drift_2d_mind_config.yaml` and `config/drift_2d_ideas_config.yaml` if you use MIND or IDEAS datasets. Each config has the same `data.precomputed_path` and `data.data_path` fields to update.
 
 ---
 
@@ -186,8 +193,10 @@ python train.py \
     --config config/drift_2d_config.yaml \
     --modality t1 \
     --stage 2 \
-    --stage1-ckpt /path/to/stage1_best.ckpt
+    --stage1-ckpt /path/to/stage1_best.ckpt   # ← replace with your Stage 1 checkpoint path
 ```
+
+> 📌 The Stage 1 checkpoint path is printed at the end of Stage 1 training as `Best checkpoint: ...`.
 
 ### Multi-GPU training
 
@@ -226,18 +235,20 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py \
 
 ```bash
 python inference.py \
-    --stage1-ckpt /path/to/stage1.ckpt \
-    --stage2-ckpt /path/to/stage2.ckpt \
-    --input /path/to/thick_slice_volume.nii.gz \
-    --output-dir /path/to/output \
+    --stage1-ckpt /path/to/stage1.ckpt \       # ← your Stage 1 checkpoint
+    --stage2-ckpt /path/to/stage2.ckpt \       # ← your Stage 2 checkpoint
+    --input /path/to/thick_slice_volume.nii.gz \  # ← input NIfTI volume to super-resolve
+    --output-dir /path/to/output \             # ← directory to save results
     --t-lr 5.0 \
     --t-hr 0.7 \
     --adaptive
 ```
 
-- `--t-lr`: Input slice thickness in mm (e.g., 5.0)
-- `--t-hr`: Target thickness in mm (e.g., 0.7 for HCP native resolution)
-- `--adaptive`: Enable PAD-based AIS (recommended)
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `--t-lr` | Input slice thickness in mm | `5.0` (5mm thick-slice scan) |
+| `--t-hr` | Target thickness in mm (native resolution of training data) | `0.7` (HCP), `0.9` (MIND), `1.0` (IDEAS) |
+| `--adaptive` | Enable PAD-based AIS adaptive stepping (recommended) | — |
 
 ### Batch evaluation on test set
 
@@ -246,7 +257,7 @@ python inference.py \
     --config config/drift_2d_config.yaml \
     --stage1-ckpt /path/to/stage1.ckpt \
     --stage2-ckpt /path/to/stage2.ckpt \
-    --data-dir /path/to/test_data \
+    --data-dir /path/to/test_npy_data \   # ← directory with test NPY slices
     --output-dir /path/to/results \
     --mode batch \
     --adaptive
