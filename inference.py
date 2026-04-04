@@ -58,13 +58,11 @@ import numpy as np
 import nibabel as nib
 from tqdm import tqdm
 
-# Add drift package root to path
+# Add drift package root to path (must come before project root to avoid name conflicts)
 current_dir = os.path.dirname(os.path.abspath(__file__))
 drift_root = os.path.abspath(current_dir)
-project_root = os.path.abspath(os.path.join(current_dir, ".."))
-for p in [drift_root, project_root]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
+if drift_root not in sys.path:
+    sys.path.insert(0, drift_root)
 
 from models.drift_2d import Stage1APNLightning, Stage2RFLightning
 from dataset.drift_2d_dataset import PrecomputedNPY2DDataset, DRIFT2DDataModuleV2
