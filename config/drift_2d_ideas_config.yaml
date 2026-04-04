@@ -1,0 +1,136 @@
+# DRIFT Super-Resolution Configuration for IDEAS Dataset
+# ======================================================
+#
+# IDEAS dataset: 256x256 2D slices, FLAIR (axi/cor/sag)
+# Native resolution: 1.0mm (assumed)
+# Train: 33,000 slices (11k per plane) | Test: 7,800 slices
+#
+# 2D slice-by-slice super-resolution:
+#   Stage 1 (Regression): x_lr → ŷ_coarse (2D U-Net, Protocol only)
+#   Stage 2 (RF Refiner): ŷ_coarse → y_hr (2D U-Net, Time + Protocol)
+
+# Model Configuration
+model:
+  in_channels: 1
+  model_config: large           # 'tiny', 'small', 'base', 'large'
+  time_embed_dim: 256           # For Stage 2 only
+  protocol_embed_dim: 256       # For both stages
+
+# Stage 1 Configuration (Regression)
+stage1:
+  learning_rate: 1e-4
+  max_epochs: 100
+  max_steps: null
+
+# Stage 2 Configuration (RF Refiner)
+stage2:
+  learning_rate: 5e-5
+  max_epochs: 200
+  max_steps: null
+  freeze_stage1: true
+
+  # CETA (Consistent Endpoint Trajectory Alignment)
+  use_ceta: true
+  ceta_weight: 1.0
+  ceta_mode: fixed
+  ceta_gap_mm: 1.0
+
+  # PAD-based Adaptive Stepping
+  use_adaptive_steps: true
+  use_pad: true
+  max_ode_steps: 10
+  min_ode_steps: 2
+
+  # Legacy SFI config (disabled)
+  use_sfi: false
+
+  # Epoch-wise image saving
+  save_epoch_images: false
+  save_epoch_interval: 10
+  save_epoch_dir: null
+  fixed_val_sample_idx: 0
+
+# Inference Configuration (Stage 2)
+inference:
+  num_steps: 4
+  solver_type: euler
+
+# Loss Configuration
+loss:
+  # Stage 1 (Regression)
+  charbonnier_epsilon: 1e-3
+  ssim_weight: 0.5
+  ssim_window_size: 11
+
+  # Stage 2 (RF Refiner)
+  type: huber
+  use_u_shaped_sampling: true
+  u_shape_power: 2.0
+
+# Data Configuration
+data:
+  # Data format: 'npy' for precomputed 2D slices
+  use_precomputed: true
+  data_format: npy
+
+  # IDEAS 2D data path
+  precomputed_path: /ssd3/yoonseok/project/data/IDEAS_256_npy
+
+  # On-the-fly 3D data (not used)
+  data_path: null
+
+  # IDEAS native resolution: 1.0mm
+  native_resolution: 1.0
+
+  patch_size: [128, 128]        # 2D patch size (H, W) - fits in 256x256
+  lr_thickness_range: [1.0, 6.0]  # Start from native resolution
+  lr_gap_range: [0.0, 0.0]
+
+  # LR Thickness Sampling
+  lr_sampling_mode: uniform
+  pad_sampling_alpha: 2.0
+
+  # Target: native resolution
+  tgt_thickness_range: [1.0, 1.0]
+  tgt_gap_range: [0.0, 0.0]
+
+  slices_per_volume: 16
+  train_num_volumes: null
+  val_num_volumes: null
+  max_train_slices: null         # Use all 33k train slices
+  max_val_slices: 1000           # Use 1k of 7.8k test slices
+  slice_profile: slr
+
+  # Degradation mode
+  degradation_mode: legacy
+
+# Training Configuration
+training:
+  batch_size: 25                 # Larger batch for 256x256 slices
+  accumulate_grad_batches: 2
+  num_workers: 8
+  weight_decay: 0.0
+  warmup_ratio: 0.05
+  gradient_clip_val: 1.0
+  seed: 42
+  save_every_n_epochs: 10
+
+# Hardware Configuration
+hardware:
+  accelerator: gpu
+  devices: 5
+  strategy: auto
+  precision: 16-mixed
+
+# Logging Configuration
+logging:
+  experiment_name: DRIFT_2d_ideas_<stage>_<modality>_<model_config>
+  project_name: DRIFT-SR-2D-IDEAS
+  use_wandb: true
+  save_top_k: 3
+  log_every_n_steps: 50
+  check_val_every_n_epoch: 1
+
+# WandB Configuration
+wandb:
+  save_dir: /ssd3/yoonseok/project/

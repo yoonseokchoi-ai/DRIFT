@@ -1,0 +1,202 @@
+# DRIFT Super-Resolution Configuration
+# ============================================
+#
+# 2D slice-by-slice super-resolution:
+#   Stage 1 (Regression): x_lr → ŷ_coarse (2D U-Net, Protocol only)
+#   Stage 2 (RF Refiner): ŷ_coarse → y_hr (2D U-Net, Time + Protocol)
+#
+# Advantages over 3D:
+# - Larger receptive field (128×128 vs 64×64×64)
+# - More efficient training (bigger batch, more samples)
+# - Clearer problem formulation per slice
+# - Better handling of directional artifacts
+
+# Model Configuration
+model:
+  in_channels: 1
+  model_config: large           # 'tiny', 'small', 'base', 'large'
+  time_embed_dim: 256           # For Stage 2 only
+  protocol_embed_dim: 256       # For both stages
+
+  # Protocol Encoding: τ = 1/T (inverse of slice thickness)
+  # Physically motivated: τ is proportional to the maximum resolvable
+  # spatial frequency (Nyquist limit: f_max = 1/2T)
+  # Larger τ means higher frequency bandwidth (more information)
+
+  # Model configurations reference (2D params):
+  # tiny:  model_channels=32,  ~3M params
+  # small: model_channels=48,  ~12M params
+  # base:  model_channels=64,  ~25M params
+  # large: model_channels=96,  ~50M params
+
+# Stage 1 Configuration (Regression)
+stage1:
+  learning_rate: 1e-4
+  max_epochs: 200
+  max_steps: null
+
+# Stage 2 Configuration (RF Refiner)
+stage2:
+  learning_rate: 5e-5
+  max_epochs: 200
+  max_steps: null        # Training max steps (null = use max_epochs)
+  freeze_stage1: true
+
+  # CETA (Consistent Endpoint Trajectory Alignment)
+  # Four modes available for ablation study:
+  #
+  # 1. 'fixed' mode (RECOMMENDED): T_lr_alt = T_lr - ceta_gap_mm
+  #    - Fixed absolute mm gap between T_lr and T_lr_alt
+  #    - Chain effect: 6mm↔5mm↔4mm↔3mm↔2mm↔1mm → all converge to HR
+  #    - Transitivity ensures dense coverage of entire thickness range
+  #    Example (ceta_gap_mm=1.0mm, T_hr=0.7mm):
+  #      T_lr=6.0mm → T_lr_alt=5.0mm (gap=1.0mm, ΔPAD=0.023)
+  #      T_lr=4.0mm → T_lr_alt=3.0mm (gap=1.0mm, ΔPAD=0.058)
+  #      T_lr=2.0mm → T_lr_alt=1.0mm (gap=1.0mm, ΔPAD=0.175)
+  #
+  # 2. 'ratio' mode: T_lr_alt = T_lr × ceta_ratio
+  #    - Gap scales with T_lr (larger gap for larger T_lr)
+  #    - Problem: Sparse coverage at high T_lr, trivial at low T_lr
+  #    Example (ceta_ratio=0.6, T_hr=0.7mm):
+  #      T_lr=6.0mm → T_lr_alt=3.6mm (gap=2.4mm, sparse!)
+  #      T_lr=4.0mm → T_lr_alt=2.4mm (gap=1.6mm)
+  #      T_lr=2.0mm → T_lr_alt=1.2mm (gap=0.8mm, trivial)
+  #
+  # 3. 'anchored' mode: T_lr_alt ~ Uniform(T_hr+ε, T_anchor)
+  #    - Star topology: all T_lr connect to anchor region only
+  #    - Problem: No transitivity (6mm≈2mm but 6mm≈5mm not guaranteed)
+  #    Example (ceta_anchor=2.0mm, T_hr=0.7mm):
+  #      T_lr=6.0mm ↔ T_lr_alt~1.2mm (no 6mm↔5mm link)
+  #      T_lr=4.0mm ↔ T_lr_alt~1.5mm (no 4mm↔3mm link)
+  #
+  # 4. 'pad_matched' mode: T_lr_alt such that ΔPAD = ceta_delta_pad (constant)
+  #    - Constant PAD difference in difficulty space
+  #    - Problem: Gap varies inversely with T_lr → very sparse at high T_lr
+  #    Formula: T_lr_alt = T_hr / (T_hr/T_lr + ΔPAD)
+  #    Example (ceta_delta_pad=0.1, T_hr=0.7mm):
+  #      T_lr=6.0mm → T_lr_alt=3.23mm (gap=2.77mm, very sparse!)
+  #      T_lr=4.0mm → T_lr_alt=2.55mm (gap=1.45mm)
+  #      T_lr=2.0mm → T_lr_alt=1.56mm (gap=0.44mm, trivial)
+  #
+  use_ceta: true
+  ceta_weight: 1.0
+  ceta_mode: fixed                # 'fixed' (recommended), 'ratio', 'anchored', 'pad_matched'
+  ceta_gap_mm: 1.0                # For 'fixed' mode: absolute gap in mm (recommended: 1.0)
+  ceta_ratio: 0.6                 # For 'ratio' mode: T_lr_alt = T_lr × ratio
+  ceta_anchor: 2.0                # For 'anchored' mode: anchor point in mm
+  ceta_delta_pad: 0.1             # For 'pad_matched' mode: constant ΔPAD
+
+  # PAD (Physics-Aware Difficulty) based Adaptive Stepping
+  # PAD = 1 - T_hr/T_lr (Spectral Deficit Ratio)
+  # N_steps = round(N_max × PAD)
+  #
+  # Based on Nyquist-Shannon theorem: fraction of lost frequency bandwidth
+  # determines how many refinement steps are needed.
+  #
+  # Examples (T_hr=0.7mm, N_max=10):
+  #   T_lr=1.4mm (2x) → PAD=0.50 → N=5 steps
+  #   T_lr=3.5mm (5x) → PAD=0.80 → N=8 steps
+  #   T_lr=6.0mm (8.6x) → PAD=0.88 → N=9 steps
+  use_adaptive_steps: true       # Enable PAD-based adaptive stepping
+  use_pad: true                   # Use PAD formula (recommended, no hyperparams)
+  max_ode_steps: 10               # N_max: Maximum allowed ODE steps
+  min_ode_steps: 2                # Minimum allowed ODE steps (numerical stability)
+
+  # Legacy SFI config (for ablation study comparison only, not recommended)
+  use_sfi: false                  # Deprecated: use_pad instead
+
+  # Epoch-wise image saving for ablation study visualization
+  # Saves JPG images every N epochs to visualize training progress
+  # Useful for: CETA endpoint convergence, velocity field evolution
+  save_epoch_images: false        # Enable saving images to disk
+  save_epoch_interval: 10         # Save every N epochs
+  save_epoch_dir: null            # Directory to save images (default: {log_dir}/epoch_images)
+  fixed_val_sample_idx: 0         # Which validation batch to use for consistent visualization
+
+# Inference Configuration (Stage 2)
+inference:
+  num_steps: 4
+  solver_type: euler
+
+# Loss Configuration
+loss:
+  # Stage 1 (Regression)
+  charbonnier_epsilon: 1e-3
+  ssim_weight: 0.5
+  ssim_window_size: 11          # 2D SSIM window
+
+  # Stage 2 (RF Refiner)
+  type: huber
+  use_u_shaped_sampling: true
+  u_shape_power: 2.0
+
+# Data Configuration
+data:
+  # Data format: 'npy' (recommended), 'h5', or 'onthefly'
+  use_precomputed: true
+  data_format: npy              # 'npy' = individual files, 'h5' = HDF5 chunks
+
+  # Precomputed 2D data path (NPY or HDF5)
+  precomputed_path: /ssd3/yoonseok/project/data/hcp_2d_sr_npy_300
+
+  # On-the-fly 3D data (fallback, slower but more flexible)
+  data_path: /ssd3/yoonseok/project/data/hcp_320_320_320
+
+  patch_size: [128, 128]        # 2D patch size (H, W)
+  lr_thickness_range: [0.7, 6.0]
+  lr_gap_range: [0.0, 0.0]
+
+  # PAD-Weighted LR Thickness Sampling
+  # Uses same PAD formula as inference: PAD = 1 - T_hr/T_lr
+  # Beta(α, 1) distribution biases toward harder cases (higher T_lr)
+  #
+  # T_lr = T_min + (T_max - T_min) × X, where X ~ Beta(α, 1)
+  # α = 1: Uniform sampling (baseline)
+  # α = 2: PAD-weighted (recommended), ~67% samples above median
+  # α = 3: Strongly PAD-weighted, ~75% samples above median
+  lr_sampling_mode: uniform              # 'uniform' or 'pad_weighted'
+  pad_sampling_alpha: 2.0                     # Beta(α, 1) parameter
+  tgt_thickness_range: [0.7, 0.7]
+  tgt_gap_range: [0.0, 0.0]
+  slices_per_volume: 16         # 2D slices sampled per volume (on-the-fly only)
+  train_num_volumes: null
+  val_num_volumes: 100
+  max_train_slices: null        # Limit training slices (null = use all)
+  max_val_slices: 1000         # Limit validation slices
+  slice_profile: slr            # 'slr' (realistic) or 'gaussian'
+
+  # Degradation mode for LR simulation
+  # - 'legacy': blur → area downsample → nearest upsample (기존 Stage1 학습에 사용)
+  # - 'physical': blur with stride → nearest upsample (물리적으로 정확, 논문 기재용)
+  degradation_mode: legacy
+
+# Training Configuration
+training:
+  batch_size: 25                # Much larger batch for 2D # w/ceta = batch_size = 25
+  accumulate_grad_batches: 2    # Effective batch = 80 * 2 * 8 = 1280
+  num_workers: 8
+  weight_decay: 0.0
+  warmup_ratio: 0.05            # Dynamic warmup: 5% of total steps
+  gradient_clip_val: 1.0
+  seed: 42
+  save_every_n_epochs: 10
+
+# Hardware Configuration
+hardware:
+  accelerator: gpu
+  devices: 8
+  strategy: auto
+  precision: 16-mixed
+
+# Logging Configuration
+logging:
+  experiment_name: DRIFT_2d_hcp_<stage>_<modality>_<model_config>
+  project_name: DRIFT-SR-2D
+  use_wandb: true
+  save_top_k: 3
+  log_every_n_steps: 50
+  check_val_every_n_epoch: 1
+
+# WandB Configuration
+wandb:
+  save_dir: /ssd3/yoonseok/project/

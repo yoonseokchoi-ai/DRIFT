@@ -1,0 +1,193 @@
+# DRIFT 2D Super-Resolution Configuration for BraTS21
+# ====================================================
+#
+# 2D slice-by-slice super-resolution on BraTS21 brain tumor dataset:
+#   Stage 1 (Regression): x_lr -> y_coarse (2D U-Net, Protocol only)
+#   Stage 2 (RF Refiner): y_coarse -> y_hr (2D U-Net, Time + Protocol)
+#
+# BraTS21 Dataset:
+#   - 4 modalities: FLAIR, T1, T1ce, T2
+#   - Resolution: 240x240 (already 2D slices)
+#   - Train: ~1.2M slices, Test: ~300K slices
+#   - Filename format: {index}_{modality}.npy (e.g., 000000_flair.npy)
+
+# Model Configuration
+model:
+  in_channels: 1
+  model_config: large           # 'tiny', 'small', 'base', 'large'
+  time_embed_dim: 256           # For Stage 2 only
+  protocol_embed_dim: 256       # For both stages
+
+  # Protocol Encoding: τ = 1/T (inverse of slice thickness)
+  # Physically motivated: τ is proportional to the maximum resolvable
+  # spatial frequency (Nyquist limit: f_max = 1/2T)
+  # Larger τ means higher frequency bandwidth (more information)
+
+  # Model configurations reference (2D params):
+  # tiny:  model_channels=32,  ~3M params
+  # small: model_channels=48,  ~12M params
+  # base:  model_channels=64,  ~25M params
+  # large: model_channels=96,  ~50M params
+
+# Stage 1 Configuration (Regression)
+stage1:
+  learning_rate: 1e-4
+  max_epochs: 100
+  max_steps: null
+
+# Stage 2 Configuration (RF Refiner)
+stage2:
+  learning_rate: 5e-5
+  max_epochs: 200
+  max_steps: null        # Training max steps (null = use max_epochs)
+  freeze_stage1: true
+
+  # CETA (Consistent Endpoint Trajectory Alignment)
+  # Three modes available:
+  #
+  # 1. 'ratio' mode: T_lr_alt = T_lr × ceta_ratio
+  #    - Maintains consistent relative difficulty difference
+  #    Example (ceta_ratio=0.5, T_hr=0.7mm):
+  #      T_lr=6.0mm → T_lr_alt=3.0mm (PAD: 0.88 → 0.77)
+  #      T_lr=4.0mm → T_lr_alt=2.0mm (PAD: 0.83 → 0.65)
+  #
+  # 2. 'anchored' mode: T_lr_alt ~ Uniform(T_hr+ε, T_anchor)
+  #    - Always samples from low-PAD region (easy cases)
+  #    - Complementary to PAD-weighted training:
+  #      * Training T_lr: PAD-weighted → oversamples hard cases
+  #      * CETA T_lr_alt: anchored → always compares with easy cases
+  #    Example (ceta_anchor=2.0mm, T_hr=0.7mm):
+  #      T_lr=6.0mm (PAD=0.88) ↔ T_lr_alt~1.2mm (PAD=0.42)
+  #      T_lr=4.0mm (PAD=0.83) ↔ T_lr_alt~1.5mm (PAD=0.53)
+  #      T_lr=2.0mm (PAD=0.65) ↔ T_lr_alt~1.3mm (PAD=0.46)
+  #
+  # 3. 'fixed' mode: T_lr_alt = T_lr - ceta_gap_mm
+  #    - Fixed absolute mm gap between T_lr and T_lr_alt
+  #    - Chain effect: nearby thicknesses converge to same HR
+  #      2mm↔1mm, 3mm↔2mm, 4mm↔3mm, ... → all converge to HR
+  #    Example (ceta_gap_mm=1.0mm, T_hr=0.7mm):
+  #      T_lr=6.0mm → T_lr_alt=5.0mm (ΔPAD=0.03)
+  #      T_lr=4.0mm → T_lr_alt=3.0mm (ΔPAD=0.06)
+  #      T_lr=2.0mm → T_lr_alt=1.0mm (ΔPAD=0.18)
+  use_ceta: true
+  ceta_weight: 1.0
+  ceta_mode: fixed                # 'ratio', 'anchored', or 'fixed' (recommended)
+  ceta_ratio: 0.5                 # For 'ratio' mode: T_lr_alt = T_lr × ratio
+  ceta_anchor: 2.0                # For 'anchored' mode: anchor point in mm
+  ceta_gap_mm: 1.0                # For 'fixed' mode: absolute gap in mm
+
+  # PAD (Physics-Aware Difficulty) based Adaptive Stepping
+  # PAD = 1 - T_hr/T_lr (Spectral Deficit Ratio)
+  # N_steps = round(N_max × PAD)
+  #
+  # Based on Nyquist-Shannon theorem: fraction of lost frequency bandwidth
+  # determines how many refinement steps are needed.
+  #
+  # Examples (T_hr=0.7mm, N_max=10):
+  #   T_lr=1.4mm (2x) → PAD=0.50 → N=5 steps
+  #   T_lr=3.5mm (5x) → PAD=0.80 → N=8 steps
+  #   T_lr=6.0mm (8.6x) → PAD=0.88 → N=9 steps
+  use_adaptive_steps: true       # Enable PAD-based adaptive stepping
+  use_pad: true                   # Use PAD formula (recommended, no hyperparams)
+  max_ode_steps: 20               # N_max: Maximum allowed ODE steps
+  min_ode_steps: 2                # Minimum allowed ODE steps (numerical stability)
+
+  # Legacy SFI config (for ablation study comparison only, not recommended)
+  use_sfi: false                  # Deprecated: use_pad instead
+
+  # Epoch-wise image saving for ablation study visualization
+  # Saves JPG images every N epochs to visualize training progress
+  # Useful for: CETA endpoint convergence, velocity field evolution
+  save_epoch_images: false        # Enable saving images to disk
+  save_epoch_interval: 10         # Save every N epochs
+  save_epoch_dir: null            # Directory to save images (default: {log_dir}/epoch_images)
+  fixed_val_sample_idx: 0         # Which validation batch to use for consistent visualization
+
+# Inference Configuration (Stage 2)
+inference:
+  num_steps: 4
+  solver_type: euler
+
+# Loss Configuration
+loss:
+  # Stage 1 (Regression)
+  charbonnier_epsilon: 1e-3
+  ssim_weight: 0.5
+  ssim_window_size: 11          # 2D SSIM window
+
+  # Stage 2 (RF Refiner)
+  type: huber
+  use_u_shaped_sampling: true
+  u_shape_power: 2.0
+
+# Data Configuration
+data:
+  # Data format: 'npy' (recommended), 'h5', or 'onthefly'
+  use_precomputed: true
+  data_format: npy              # 'npy' = individual files, 'h5' = HDF5 chunks
+
+  # BraTS21 data path (converted to DRIFT format)
+  # Filename format: {index}_{modality}.npy (e.g., 000000_flair.npy)
+  precomputed_path: /ssd3/yoonseok/project/data/BraTS21_drift
+
+  # On-the-fly 3D data (not used for BraTS21)
+  data_path: null
+
+  patch_size: [128, 128]        # 2D patch size (H, W) - BraTS is 240x240
+  lr_thickness_range: [0.7, 6.0]
+  lr_gap_range: [0.0, 0.0]
+
+  # PAD-Weighted LR Thickness Sampling
+  # Uses same PAD formula as inference: PAD = 1 - T_hr/T_lr
+  # Beta(α, 1) distribution biases toward harder cases (higher T_lr)
+  #
+  # T_lr = T_min + (T_max - T_min) × X, where X ~ Beta(α, 1)
+  # α = 1: Uniform sampling (baseline)
+  # α = 2: PAD-weighted (recommended), ~67% samples above median
+  # α = 3: Strongly PAD-weighted, ~75% samples above median
+  lr_sampling_mode: uniform              # 'uniform' or 'pad_weighted'
+  pad_sampling_alpha: 2.0                # Beta(α, 1) parameter
+  tgt_thickness_range: [0.7, 0.7]
+  tgt_gap_range: [0.0, 0.0]
+  slices_per_volume: 16         # Not used for precomputed
+  train_num_volumes: null
+  val_num_volumes: null
+  max_train_slices: 40000        # Limit training slices (null = use all ~1.2M)
+  max_val_slices: 1000          # Limit validation slices
+  slice_profile: slr            # 'slr' (realistic) or 'gaussian'
+
+  # Degradation mode for LR simulation
+  # - 'legacy': blur → area downsample → nearest upsample (기존 Stage1 학습에 사용)
+  # - 'physical': blur with stride → nearest upsample (물리적으로 정확, 논문 기재용)
+  degradation_mode: legacy
+
+# Training Configuration
+training:
+  batch_size: 25                # Larger batch for 2D (w/ceta)
+  accumulate_grad_batches: 2    # Effective batch = 25 * 2 * 7 = 350
+  num_workers: 8
+  weight_decay: 0.0
+  warmup_ratio: 0.05            # Dynamic warmup: 5% of total steps
+  gradient_clip_val: 1.0
+  seed: 42
+  save_every_n_epochs: 10
+
+# Hardware Configuration
+hardware:
+  accelerator: gpu
+  devices: 7
+  strategy: auto
+  precision: 16-mixed
+
+# Logging Configuration
+logging:
+  experiment_name: drift_2d_brats21_<stage>_<modality>_<model_config>
+  project_name: DRIFT-2D-BraTS21
+  use_wandb: true
+  save_top_k: 3
+  log_every_n_steps: 50
+  check_val_every_n_epoch: 1
+
+# WandB Configuration
+wandb:
+  save_dir: /ssd3/yoonseok/project/
