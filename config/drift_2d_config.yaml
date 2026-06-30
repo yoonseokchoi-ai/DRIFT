@@ -1,6 +1,11 @@
 # DRIFT Super-Resolution Configuration
 # ============================================
 #
+# NOTE: All filesystem paths below are placeholders. Search for "/path/to/your"
+#       (data.precomputed_path, data.data_path, wandb.save_dir) and change them
+#       to match your own environment before running.
+# NOTE: Pretrained HCP checkpoints are released on Hugging Face (see README).
+#
 # 2D slice-by-slice super-resolution:
 #   Stage 1 (Regression): x_lr → ŷ_coarse (2D U-Net, Protocol only)
 #   Stage 2 (RF Refiner): ŷ_coarse → y_hr (2D U-Net, Time + Protocol)
@@ -137,10 +142,12 @@ data:
   data_format: npy              # 'npy' = individual files, 'h5' = HDF5 chunks
 
   # Precomputed 2D data path (NPY or HDF5)
-  precomputed_path: /ssd3/yoonseok/project/data/hcp_2d_sr_npy_300
+  # TODO: change to your own precomputed 2D dataset directory
+  precomputed_path: /path/to/your/hcp_2d_sr_npy_300
 
   # On-the-fly 3D data (fallback, slower but more flexible)
-  data_path: /ssd3/yoonseok/project/data/hcp_320_320_320
+  # TODO: change to your own 3D volume dataset directory
+  data_path: /path/to/your/hcp_320_320_320
 
   patch_size: [128, 128]        # 2D patch size (H, W)
   lr_thickness_range: [0.7, 6.0]
@@ -199,4 +206,5 @@ logging:
 
 # WandB Configuration
 wandb:
-  save_dir: /ssd3/yoonseok/project/
+  # TODO: change to your own output/log directory (checkpoints & W&B logs are saved here)
+  save_dir: /path/to/your/output_dir
