@@ -4,10 +4,16 @@
 > Reconstructs isotropic MRI volumes from anisotropic thick-slice acquisitions using a two-stage rectified flow framework with physics-aware adaptive inference.
 
 <p align="center">
+  <a href="https://yoonseokchoi-ai.github.io/drift-eccv2026/"><img src="https://img.shields.io/badge/🌐_Project_Page-drift--eccv2026-4f9cf9" /></a>
+  <a href="https://huggingface.co/yoonseokchoi/drift-hcp"><img src="https://img.shields.io/badge/🤗_Models-drift--hcp-yellow" /></a>
+</p>
+<p align="center">
   <img src="https://img.shields.io/badge/PyTorch-2.2+-ee4c2c?logo=pytorch" />
   <img src="https://img.shields.io/badge/Lightning-2.5+-792ee5?logo=pytorchlightning" />
   <img src="https://img.shields.io/badge/Python-3.10+-3776ab?logo=python" />
 </p>
+
+**🌐 Project page:** https://yoonseokchoi-ai.github.io/drift-eccv2026/ &nbsp;|&nbsp; **🤗 Models:** https://huggingface.co/yoonseokchoi/drift-hcp
 
 ---
 
