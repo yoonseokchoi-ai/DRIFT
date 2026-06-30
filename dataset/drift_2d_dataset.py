@@ -161,8 +161,8 @@ class DRIFT2DDataset(Dataset):
         self.cache_in_memory = cache_in_memory
 
         # Degradation mode:
-        # - 'legacy': blur → area downsample → nearest upsample (기존 방식, Stage1 학습에 사용)
-        # - 'physical': blur with stride → nearest upsample (물리적으로 정확한 방식)
+        # - 'legacy': blur → area downsample → nearest upsample
+        # - 'physical': blur with stride → nearest upsample
         self.degradation_mode = degradation_mode
 
         # Protocol ranges
@@ -416,8 +416,8 @@ class DRIFT2DDataset(Dataset):
         but much more efficient (320×320 vs 320×320×320).
 
         Two modes available (controlled by self.degradation_mode):
-        - 'legacy': blur → area downsample → nearest upsample (기존 Stage1 학습에 사용)
-        - 'physical': blur with stride → nearest upsample (물리적으로 정확)
+        - 'legacy': blur → area downsample → nearest upsample
+        - 'physical': blur with stride → nearest upsample
 
         Args:
             hr_slice: High-resolution 2D slice (H, W)
@@ -447,7 +447,7 @@ class DRIFT2DDataset(Dataset):
 
         if self.degradation_mode == 'legacy':
             # Legacy mode: blur → area downsample → nearest upsample
-            # (기존 Stage1 학습에 사용된 방식)
+            #
 
             # Step 1: Apply blur (no stride)
             blurred = self._apply_1d_blur_2d(hr_slice, kernel, blur_axis)
@@ -470,7 +470,7 @@ class DRIFT2DDataset(Dataset):
                 lr_slice = upsampled.squeeze()
         else:
             # Physical mode: blur with stride → nearest upsample
-            # (물리적으로 정확한 방식 - 논문에서 사용)
+            #
             stride = max(1, int(round(downsample_factor)))
 
             # Step 1: Apply SLR blur WITH STRIDE (blur + downsample in one operation)
@@ -820,8 +820,8 @@ class PrecomputedNPY2DDataset(Dataset):
         self.plane_filter = plane_filter  # For TPDM: train on specific plane
 
         # Degradation mode:
-        # - 'legacy': blur → area downsample → nearest upsample (기존 Stage1 학습에 사용)
-        # - 'physical': blur with stride → nearest upsample (물리적으로 정확한 방식)
+        # - 'legacy': blur → area downsample → nearest upsample
+        # - 'physical': blur with stride → nearest upsample
         self.degradation_mode = degradation_mode
 
         # CETA configuration
@@ -1485,8 +1485,8 @@ class PrecomputedNPY2DDataset(Dataset):
         Apply SLR-based degradation simulating thick-slice MRI acquisition.
 
         Two modes available (controlled by self.degradation_mode):
-        - 'legacy': blur → area downsample → nearest upsample (기존 Stage1 학습에 사용)
-        - 'physical': blur with stride → nearest upsample (물리적으로 정확)
+        - 'legacy': blur → area downsample → nearest upsample
+        - 'physical': blur with stride → nearest upsample
         """
         H, W = hr_slice.shape
         original_size = [H, W]
@@ -1508,7 +1508,7 @@ class PrecomputedNPY2DDataset(Dataset):
 
         if self.degradation_mode == 'legacy':
             # Legacy mode: blur → area downsample → nearest upsample
-            # (기존 Stage1 학습에 사용된 방식)
+            #
 
             # Step 1: Apply blur (no stride)
             blurred = self._apply_1d_blur(hr_slice, kernel, blur_axis)
@@ -1531,8 +1531,8 @@ class PrecomputedNPY2DDataset(Dataset):
                 return upsampled.squeeze()
         else:
             # Physical mode: blur with stride → nearest upsample
-            # (물리적으로 정확한 방식 - 논문에서 사용)
-            # NumPy/SciPy 기반으로 구현하여 DataLoader worker에서 CUDA context 문제 방지
+            #
+            # NumPy/SciPy-based implementation to avoid CUDA context issues in DataLoader workers
             stride = max(1, int(round(downsample_factor)))
 
             # Convert to numpy for CPU-only processing

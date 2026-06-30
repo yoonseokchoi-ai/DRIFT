@@ -173,8 +173,8 @@ data:
   slice_profile: slr            # 'slr' (realistic) or 'gaussian'
 
   # Degradation mode for LR simulation
-  # - 'legacy': blur → area downsample → nearest upsample (기존 Stage1 학습에 사용)
-  # - 'physical': blur with stride → nearest upsample (물리적으로 정확, 논문 기재용)
+  # - 'legacy': blur → area downsample → nearest upsample
+  # - 'physical': blur with stride → nearest upsample
   degradation_mode: legacy
 
 # Training Configuration
