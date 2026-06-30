@@ -42,9 +42,7 @@ drift/
 │   ├── mri_utils.py          # 🩺 MRI orientation & protocol constants
 │   └── drift_2d_dataset.py   # 📊 Dataset & DataModule (SLR simulation)
 └── config/
-    ├── drift_2d_config.yaml          # HCP (0.7mm isotropic)
-    ├── drift_2d_mind_config.yaml     # MIND (0.9mm isotropic)
-    └── drift_2d_ideas_config.yaml    # IDEAS (1.0mm isotropic)
+    └── drift_2d_config.yaml          # HCP (0.7mm isotropic)
 ```
 
 ---
@@ -163,7 +161,7 @@ wandb:
   save_dir: /your/output/path/                    # ← CHANGE THIS to where you want checkpoints & logs
 ```
 
-> 💡 **Tip:** Similarly update `config/drift_2d_mind_config.yaml` and `config/drift_2d_ideas_config.yaml` if you use MIND or IDEAS datasets. Each config has the same `data.precomputed_path` and `data.data_path` fields to update.
+> 💡 **Tip:** The released config targets HCP (0.7&nbsp;mm isotropic). For other datasets (e.g. MIND, IDEAS), copy this config and adjust `data.precomputed_path`, `data.data_path`, the thickness ranges, and `data.tgt_thickness_range` accordingly.
 
 ---
 
@@ -226,6 +224,26 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py \
 | Batch size / GPU | 64 | 25 |
 | Epochs | 100 | 100 |
 | Key loss | Charbonnier + SSIM | Huber (velocity) + CETA |
+
+---
+
+## 🤗 Pretrained Checkpoints
+
+Pretrained **HCP** checkpoints (0.7&nbsp;mm isotropic) are released on Hugging Face:
+
+**➡️ [huggingface.co/yoonseokchoi/drift-hcp](https://huggingface.co/yoonseokchoi/drift-hcp)**
+
+| File | Stage | Notes |
+|------|-------|-------|
+| `drift_hcp_stage1.ckpt` | Stage 1 · APN | weights-only |
+| `drift_hcp_stage2.ckpt` | Stage 2 · Rectified Flow | weights-only |
+
+```bash
+# Download (requires: pip install huggingface_hub)
+huggingface-cli download yoonseokchoi/drift-hcp drift_hcp_stage1.ckpt drift_hcp_stage2.ckpt --local-dir ./checkpoints
+```
+
+Then pass them to `inference.py` via `--stage1-ckpt` / `--stage2-ckpt` below.
 
 ---
 
